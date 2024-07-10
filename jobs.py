@@ -9,40 +9,76 @@ import pdf_creator
 import time
 import os
 
-chrome = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+def create_chrome_driver():
+    try:
+        return webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+    except Exception as e:
+        print(f"Erro ao iniciar o ChromeDriver: {e}")
+        return None
 
-url = 'https://www.indeed.com.br/'
+def fetch_job_listings(driver, url):
+    try:
+        driver.get(url)
 
-chrome.get(url)
+        search_box = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, 'text-input-what'))
+        )
+        search_box.send_keys('Estagio Desenvolvimento')
 
-search_box = chrome.find_element(By.ID,'text-input-what')
+        search_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CLASS_NAME, 'yosegi-InlineWhatWhere-primaryButton'))
+        )
+        search_button.click()
 
-search_box.send_keys('Estagio Desenvolvimento')
+        # Esperar até que a lista de vagas esteja presente
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'ul.css-zu9cdh.eu4oa1w0'))
+        )
 
-search_button = chrome.find_element(By.CLASS_NAME,'yosegi-InlineWhatWhere-primaryButton')
+        return driver.page_source
 
-search_button.click()
+    except Exception as e:
+        print(f"Erro ao buscar vagas: {e}")
+        return None
 
-page_source = chrome.page_source
+def parse_job_listings(page_source):
+    try:
+        soup = BeautifulSoup(page_source, 'html.parser')
+        jobs_list = soup.find('ul', class_="css-zu9cdh eu4oa1w0")
 
-soup = BeautifulSoup(page_source, 'html.parser')
+        if jobs_list:
+            list_items = jobs_list.find_all('li')
+            return [item.get_text() for item in list_items]
+        else:
+            print("Lista não encontrada.")
+            return ["LISTA NÃO ENCONTRADA"]
+    except Exception as e:
+        print(f"Erro ao parsear HTML: {e}")
+        return ["ERRO AO PARSEAR HTML"]
 
-jobs_list = soup.find('ul',class_="css-zu9cdh eu4oa1w0")
+def main():
+    url = 'https://www.indeed.com.br/'
+    driver = create_chrome_driver()
 
+    if not driver:
+        return
 
-if jobs_list:
+    try:
+        page_source = fetch_job_listings(driver, url)
 
-    list_items = jobs_list.find_all('li')
-    list_content = [item.get_text() for item in list_items]
-    
-    pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vagas.pdf")
-    pdf_creator.create_pdf(list_content, pdf_path)
+        if page_source:
+            job_listings = parse_job_listings(page_source)
+        else:
+            job_listings = ["ERRO AO OBTER FONTES DA PÁGINA"]
 
-else:
-    pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vagas.pdf")
-    pdf_creator.create_pdf("LISTA NAO ENCONTRADA", pdf_path)
-    print("Lista não encontrada.")
+        pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vagas.pdf")
+        pdf_creator.create_pdf("\n".join(job_listings), pdf_path)
 
-time.sleep(10)
-chrome.quit()
+        print(f"PDF criado com sucesso e salvo em {pdf_path}")
 
+    finally:
+        time.sleep(10)
+        driver.quit()
+
+if __name__ == "__main__":
+    main()
